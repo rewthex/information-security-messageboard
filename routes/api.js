@@ -49,14 +49,12 @@ module.exports = function (app) {
 		.put(async (req, res) => {
 			const _id = req.body.report_id;
 			try {
-				const message = await Message.findOne({ _id });
-				if (message) {
-					message.reported = true;
-					await message.save();
-					return res.send("reported");
-				} else {
-					return res.send("not found");
-				}
+				const reportedThread = await Message.findOneAndUpdate(
+					{ _id },
+					{ $set: { reported: true } },
+					{ new: true }
+				);
+				return res.send("reported");
 			} catch (error) {
 				return res.send("error");
 			}
@@ -83,17 +81,19 @@ module.exports = function (app) {
 			const board = req.params.board;
 			const _id = req.query.thread_id;
 			try {
-				const thread = await Message.findOne({ _id, board })
-					.populate({
-						path: "replies",
-						select: "text created_on reported",
-					})
-					.select("_id text created_on bumped_on replies");
-				if (!thread) {
-					res.send("thread not found");
-				} else {
-					res.json(thread);
-				}
+				const thread = await Message.findOne(
+					{ _id, board },
+					{
+						_id: 1,
+						text: 1,
+						created_on: 1,
+						bumped_on: 1,
+						"replies._id": 1,
+						"replies.text": 1,
+						"replies.created_on": 1,
+					}
+				);
+				return res.json(thread);
 			} catch (error) {
 				res.send("error");
 			}
@@ -134,15 +134,19 @@ module.exports = function (app) {
 		.delete(async (req, res) => {
 			const { thread_id, reply_id, delete_password } = req.body;
 			try {
-				const thread = await Message.findOne({ _id: thread_id });
-				const reply = thread.replies.find((reply) =>
-					reply._id.equals(reply_id)
+				const deletedReply = await Message.findOneAndUpdate(
+					{
+						_id: thread_id,
+						"replies._id": reply_id,
+						"replies.delete_password": delete_password,
+					},
+					{ $set: { "replies.$.text": "[deleted]" } },
+					{ new: true }
 				);
-				if (delete_password == reply.delete_password) {
-					reply.text = "[deleted]";
-					return res.send("success");
+				if (deletedReply) {
+					res.send("success");
 				} else {
-					return res.send("incorrect password");
+					res.send("incorrect password");
 				}
 			} catch (error) {
 				return res.send("error");
